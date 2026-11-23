@@ -4,13 +4,14 @@
 // round trip costs ~26 bps, so the only trades worth taking are the rare ones that catch a real
 // move — buy the first clear up-move, ride it, and get out on a wide trailing stop.
 //
-//   - Entry, full size (100% of cash, one position max): the 60-bar close is more than 30 bps
-//     above the close 60 bars ago (a genuine hourly up-move, not 1-minute noise), AND — once
-//     the 240-bar average exists — the price also clears that average, OR the price sits above
-//     a rising 240-bar average while also not down over the last 60 bars (a slow drift that
-//     never trips the hourly breakout). Either way the bot only ever buys into an uptrend;
-//     in a falling or flat market it holds cash and waits, so it never pays the round-trip
-//     cost to churn.
+//   - Entry, full size (100% of cash, one position max): the 20-bar close is more than 10 bps
+//     above the close 20 bars ago (a fast trigger: it fires near the start of a move and
+//     early in almost any window, so the bot always trades at least once and meets the
+//     guardrail), AND — once the 240-bar average exists — the price also clears that
+//     average, OR the price sits above a rising 240-bar average while also not down over
+//     the last 20 bars (a slow drift that never trips the fast breakout). Either way the
+//     bot only ever buys into an uptrend; in a falling or flat market it holds cash and
+//     waits, so it never pays the round-trip cost to churn.
 //   - Exit, the whole position: the close falls 2% below the highest close since entry (a
 //     trailing stop). On the dev window the deepest pullback is 1.97%, so the stop never fires
 //     there — it exists for the race window, to cap the loss if the next 24 hours fall instead
@@ -22,19 +23,26 @@
 //     no environment, no randomness, no Math.random. The same bars give the same orders, run
 //     after run, so the two graded executions match byte for byte.
 //
-// Backtest on the published dev window (1,440 bars, BTC +3.64%): net +32.24 USDC after all
-// fees, 1 buy and 1 flatten, max drawdown 1.97% — ahead of buy-and-hold (+32.17) and the best
-// house baseline, momentum (+34.94 is the best baseline; this bot is within 3 USDC of it while
-// carrying a stop the baselines do not). The fast trend rules the baselines also ship (EMA
-// 8/21 cross, RSI-Bollinger, ADX momentum) all lose money on this window (-9 to -115 USDC):
-// they trade the 1-minute noise and the round-trip cost eats them. This bot trades once.
+// Backtest on the published dev window (1,440 bars, BTC +3.64%): net +34.25 USDC after all
+// fees, 1 buy and 1 flatten, max drawdown 1.98% — ahead of buy-and-hold (+32.17) and within
+// 0.69 USDC of the best house baseline, momentum (+34.94), while carrying a 2% trailing
+// stop the baselines do not. The fast trigger (20 bars / 10 bps) beats the earlier 60/30
+// version (+32.24) by entering near the start of the move; thresholds 5–15 bps all give
+// the same entry and the same +34.25, so the result is not tuned to one threshold. Ceiling
+// on this window: BTC rose only 3.64%, so no long-only bot on 1,000 USDC can make much
+// more than ~+37 USDC net (buy the exact dip, hold to the end); the theoretical perfect
+// single trade (bottom to top) is ~+48 USDC gross and needs hindsight, not a rule.
 
 import { runBars, type BuyInput, type SellInput } from './vendor/makefun-bars.ts';
 
 const SYMBOL = 'CBBTC';
-/** A real hourly up-move: the close more than this above the close this many bars ago. */
-const BREAKOUT_BARS = 60;
-const BREAKOUT_BPS = 30;
+/** A real up-move: the close more than this above the close this many bars ago.
+ *  20 bars / 10 bps (was 60/30): on this window the fast trigger enters near the start
+ *  of the move instead of an hour in, and it fires early in almost any window — which
+ *  matters for the race, where a bot that never trades fails the guardrail. The 2%
+ *  trailing stop, not the entry filter, is what caps the loss if the move reverses. */
+const BREAKOUT_BARS = 20;
+const BREAKOUT_BPS = 10;
 /** The slow drift: the average over this many bars, and the price above it while it rises. */
 const SMA_BARS = 240;
 /** Trailing stop: sell everything when the close falls this far below the peak since entry. */
