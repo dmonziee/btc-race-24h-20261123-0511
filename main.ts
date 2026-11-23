@@ -5,10 +5,12 @@
 // move — buy the first clear up-move, ride it, and get out on a wide trailing stop.
 //
 //   - Entry, full size (100% of cash, one position max): the 60-bar close is more than 30 bps
-//     above the close 60 bars ago (a genuine hourly up-move, not 1-minute noise), OR the price
-//     sits above a rising 240-bar average (a slow drift that never trips the hourly breakout).
-//     Either way the bot only ever buys into an uptrend; in a falling or flat market it holds
-//     cash and waits, so it never pays the round-trip cost to churn.
+//     above the close 60 bars ago (a genuine hourly up-move, not 1-minute noise), AND — once
+//     the 240-bar average exists — the price also clears that average, OR the price sits above
+//     a rising 240-bar average while also not down over the last 60 bars (a slow drift that
+//     never trips the hourly breakout). Either way the bot only ever buys into an uptrend;
+//     in a falling or flat market it holds cash and waits, so it never pays the round-trip
+//     cost to churn.
 //   - Exit, the whole position: the close falls 2% below the highest close since entry (a
 //     trailing stop). On the dev window the deepest pullback is 1.97%, so the stop never fires
 //     there — it exists for the race window, to cap the loss if the next 24 hours fall instead
@@ -89,12 +91,21 @@ await runBars({
     let enter = false;
     if (closes.length > BREAKOUT_BARS) {
       const old = closes[closes.length - 1 - BREAKOUT_BARS];
-      if (c * 10000 >= old * (10000 + BREAKOUT_BPS)) enter = true;
+      if (c * 10000 >= old * (10000 + BREAKOUT_BPS)) {
+        // Confirmation: once the slow average exists, the breakout must also clear it.
+        // A 60-bar jump that still sits below the 240-bar average is a bounce against
+        // the trend, not the start of one — skip it.
+        const avg = sma();
+        if (avg === null || c > avg) enter = true;
+      }
     }
     if (!enter) {
       const avg = sma();
       const prev = prevSma();
-      if (avg !== null && prev !== null && c > avg && avg > prev) enter = true;
+      // The slow drift must also be up over the last hour: a price above a rising
+      // average but below where it was 60 bars ago is still falling, not drifting up.
+      const old = closes.length > BREAKOUT_BARS ? closes[closes.length - 1 - BREAKOUT_BARS] : null;
+      if (avg !== null && prev !== null && c > avg && avg > prev && (old === null || c >= old)) enter = true;
     }
     if (!enter) return [];
 
